@@ -1,0 +1,47 @@
+services:
+  # ---------------------------------------------------------------
+  # Public blog — reachable from the internet via your reverse proxy
+  # ---------------------------------------------------------------
+  makersec-public:
+    build: .
+    image: makersec:latest
+    container_name: makersec-public
+    restart: unless-stopped
+    ports:
+      # host:container — put Caddy/nginx/Cloudflare Tunnel in front of this
+      - "${PUBLIC_BIND:-0.0.0.0}:8080:3000"
+    environment:
+      SITE_MODE: public
+      GITHUB_REPO: ${PUBLIC_REPO}
+      GITHUB_BRANCH: ${PUBLIC_BRANCH:-main}
+      CONTENT_DIR: ${PUBLIC_CONTENT_DIR:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      SITE_TITLE: ${PUBLIC_TITLE:-MakerSec}
+      SITE_AUTHOR: ${SITE_AUTHOR:-}
+      SITE_URL: ${PUBLIC_URL:-}
+      CACHE_TTL: ${CACHE_TTL:-120}
+
+  # ---------------------------------------------------------------
+  # Private notebook — bind this to the tailnet (or LAN) only.
+  # Set PRIVATE_BIND to your tailscale IP, e.g. PRIVATE_BIND=100.x.y.z
+  # ---------------------------------------------------------------
+  makersec-private:
+    build: .
+    image: makersec:latest
+    container_name: makersec-private
+    restart: unless-stopped
+    ports:
+      - "${PRIVATE_BIND:-127.0.0.1}:8081:3000"
+    environment:
+      SITE_MODE: private
+      GITHUB_REPO: ${PRIVATE_REPO}
+      GITHUB_BRANCH: ${PRIVATE_BRANCH:-main}
+      CONTENT_DIR: ${PRIVATE_CONTENT_DIR:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      SITE_TITLE: ${PRIVATE_TITLE:-MakerSec Restricted}
+      SITE_AUTHOR: ${SITE_AUTHOR:-}
+      CACHE_TTL: ${CACHE_TTL:-120}
+      SHOW_DRAFTS: "true"
+      SHOW_SOURCE: "false"
