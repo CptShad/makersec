@@ -4,10 +4,13 @@
   "private": true,
   "description": "Self-hosted maker blog that reads markdown straight out of a GitHub repo.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "build": "node src/build.js"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",

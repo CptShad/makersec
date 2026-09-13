@@ -14,6 +14,11 @@ export const config = {
   port: int(env.PORT, 3000),
   host: env.HOST || '0.0.0.0',
 
+  // Set when the site is served from a sub-path, e.g. GitHub Pages at /makersec-posts.
+  basePath: (env.BASE_PATH || '').replace(/\/+$/, '').replace(/^(?=[^/])/, '/'),
+  // True while src/build.js writes static files: no server-only links (status, refresh).
+  isStatic: false,
+
   // Where the markdown lives.
   repo: env.GITHUB_REPO || '',            // "owner/name"
   branch: env.GITHUB_BRANCH || 'main',
@@ -46,3 +51,6 @@ export function assertConfig() {
     throw new Error('GITHUB_REPO must be set to "owner/name" (or set LOCAL_CONTENT to a folder path).');
   }
 }
+
+/** Prefix a site-absolute path ("/tags") with the base path. */
+export const u = (path) => config.basePath + path;

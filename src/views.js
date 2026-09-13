@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, u } from './config.js';
 
 export function esc(value) {
   return String(value ?? '')
@@ -10,7 +10,7 @@ export function esc(value) {
 }
 
 // Static assets are served with a long max-age, so a deploy has to change the URL
-// or returning visitors keep the old CSS. Restarting the process is the deploy.
+// or returning visitors keep the old CSS. Restarting the process (or rebuilding) is the deploy.
 const ASSET_V = Date.now().toString(36);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -22,6 +22,8 @@ export function dateStamp(date) {
 }
 
 const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+const postUrl = (slug) => u(`/p/${encodeURIComponent(slug)}`);
 
 const STATUS_MAP = [
   [/^(works?|working|done|complete[d]?|shipped)$/i, 'ok', 'Working'],
@@ -43,7 +45,7 @@ export function statusBadge(status) {
 const DRAFT_BADGE = '<span class="status status-draft">Draft</span>';
 
 function tagChip(tag, slug) {
-  return `<a class="chip" href="/tags/${encodeURIComponent(slug)}">${esc(tag)}</a>`;
+  return `<a class="chip" href="${u(`/tags/${encodeURIComponent(slug)}`)}">${esc(tag)}</a>`;
 }
 
 const MARK = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -61,7 +63,7 @@ function nav(active, idx) {
   if (idx?.pages?.has('uses')) items.push(['/uses', 'Uses']);
   items.push(['/feed.xml', 'RSS']);
   return items
-    .map(([href, label]) => `<a href="${href}"${href === active ? ' class="on"' : ''}>${label}</a>`)
+    .map(([href, label]) => `<a href="${u(href)}"${href === active ? ' class="on"' : ''}>${label}</a>`)
     .join('');
 }
 
@@ -86,9 +88,9 @@ ${config.isPrivate ? '<meta name="robots" content="noindex, nofollow">' : ''}
 <meta property="og:type" content="website">
 ${canonical && site.url ? `<link rel="canonical" href="${esc(site.url + canonical)}">` : ''}
 ${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
-<link rel="stylesheet" href="/static/style.css?v=${ASSET_V}">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="alternate" type="application/rss+xml" title="${esc(site.title)}" href="/feed.xml">
+<link rel="stylesheet" href="${u('/static/style.css')}?v=${ASSET_V}">
+<link rel="icon" href="${u('/favicon.svg')}" type="image/svg+xml">
+<link rel="alternate" type="application/rss+xml" title="${esc(site.title)}" href="${u('/feed.xml')}">
 <script>try{var t=localStorage.getItem('makersec-theme');if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)t='light';if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body>
@@ -96,7 +98,7 @@ ${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
 ${config.isPrivate ? '<div class="hazard" role="presentation"></div>' : '<div class="rail" role="presentation"></div>'}
 <header class="site">
   <div class="wrap head-inner">
-    <a class="brand" href="/">
+    <a class="brand" href="${u('/')}">
       ${MARK}
       <span class="brand-title">${esc(site.title)}</span>
       ${config.isPrivate ? '<span class="status status-private">Private</span>' : ''}
@@ -118,12 +120,12 @@ ${body}
     </div>
     <div class="foot-col">
       ${site.author ? `<span>Built by ${esc(site.author)}</span>` : ''}
-      <a href="/feed.xml">RSS</a>
-      <a href="/healthz">Status</a>
+      <a href="${u('/feed.xml')}">RSS</a>
+      ${config.isStatic ? '' : `<a href="${u('/healthz')}">Status</a>`}
     </div>
   </div>
 </footer>
-<script src="/static/app.js?v=${ASSET_V}" defer></script>
+<script src="${u('/static/app.js')}?v=${ASSET_V}" defer></script>
 </body>
 </html>`;
 }
@@ -136,7 +138,7 @@ export function postCard(post, tagSlug) {
     <span class="stamp">${dateStamp(post.date) || 'Undated'}</span>
   </div>
   <div class="card-body">
-    <h2 class="card-title"><a href="/p/${encodeURIComponent(post.slug)}">${esc(post.title)}</a>${post.status ? ' ' + statusBadge(post.status) : ''}${post.draft && !post.status ? ' ' + DRAFT_BADGE : ''}</h2>
+    <h2 class="card-title"><a href="${postUrl(post.slug)}">${esc(post.title)}</a>${post.status ? ' ' + statusBadge(post.status) : ''}${post.draft && !post.status ? ' ' + DRAFT_BADGE : ''}</h2>
     <p class="card-sum">${esc(post.summary)}</p>
     <div class="card-meta">
       ${tags ? `<div class="chips">${tags}</div>` : '<div></div>'}
@@ -150,23 +152,24 @@ export function indexPage(idx, tagSlug) {
   const posts = idx.posts;
   const tags = [...idx.tags.values()].sort((a, b) => b.posts.length - a.posts.length);
 
+  const refreshHint = config.isStatic
+    ? 'Push it and the site rebuilds.'
+    : `Push it, then <a href="${u('/api/refresh')}">refresh the cache</a> or wait ${config.cacheTtl} seconds.`;
+
   const empty = `<section class="panel empty">
   <h2 class="panel-title">No posts yet</h2>
   <p>This site reads from <code>${esc(config.localContent || config.repo + '@' + config.branch)}</code>${config.contentDir ? ` (in <code>${esc(config.contentDir)}/</code>)` : ''}, and there is no markdown there.</p>
-  <p>Add a file such as <code>posts/2026-09-12-first-light.md</code> to the repo:</p>
+  <p>Add a file such as <code>2026-09-12-first-light.md</code> to the repo:</p>
   <pre class="sample"><code>---
 title: First light
 date: 2026-09-12
 status: working
 tags: [esp32, power]
 summary: One sentence for the post list.
-parts:
-  - ESP32-C3 devkit
-  - INA219 current sensor
 ---
 
 Write the post here in normal markdown.</code></pre>
-  <p class="dim">Push it, then <a href="/api/refresh">refresh the cache</a> or wait ${config.cacheTtl} seconds.</p>
+  <p class="dim">${refreshHint}</p>
 </section>`;
 
   const stats = [
@@ -221,7 +224,7 @@ export function postPage(post, html, idx, tagSlug, neighbors) {
     : '';
 
   const cover = post.cover
-    ? `<figure class="cover"><img src="${/^https?:/i.test(post.cover) ? esc(post.cover) : `/media/${esc(post.dir ? post.dir + '/' : '')}${esc(post.cover.replace(/^\.\//, ''))}`}" alt=""></figure>`
+    ? `<figure class="cover"><img src="${/^https?:/i.test(post.cover) ? esc(post.cover) : u(`/media/${esc(post.dir ? post.dir + '/' : '')}${esc(post.cover.replace(/^\.\//, ''))}`)}" alt=""></figure>`
     : '';
 
   const meta = [
@@ -230,7 +233,7 @@ export function postPage(post, html, idx, tagSlug, neighbors) {
     `<span>${post.minutes} min read</span>`,
   ].join('<span class="dot">·</span>');
 
-  return `<nav class="crumbs"><a href="/">&larr; All posts</a></nav>
+  return `<nav class="crumbs"><a href="${u('/')}">&larr; All posts</a></nav>
 <article class="post">
   <header class="post-head">
     <div class="post-stampline mono">
@@ -250,19 +253,19 @@ export function postPage(post, html, idx, tagSlug, neighbors) {
   <footer class="post-foot">
     <div class="foot-links">
       ${sourceUrl ? `<a href="${esc(sourceUrl)}" rel="noopener noreferrer" target="_blank">View source on GitHub</a>` : ''}
-      <a href="/p/${encodeURIComponent(post.slug)}.md">Raw markdown</a>
+      <a href="${postUrl(post.slug)}.md">Raw markdown</a>
       <a href="#main">Back to top</a>
     </div>
     <nav class="neighbors">
-      ${neighbors.prev ? `<a class="neighbor prev" href="/p/${encodeURIComponent(neighbors.prev.slug)}"><span class="lbl">&larr; Older</span><span>${esc(neighbors.prev.title)}</span></a>` : '<span></span>'}
-      ${neighbors.next ? `<a class="neighbor next" href="/p/${encodeURIComponent(neighbors.next.slug)}"><span class="lbl">Newer &rarr;</span><span>${esc(neighbors.next.title)}</span></a>` : '<span></span>'}
+      ${neighbors.prev ? `<a class="neighbor prev" href="${postUrl(neighbors.prev.slug)}"><span class="lbl">&larr; Older</span><span>${esc(neighbors.prev.title)}</span></a>` : '<span></span>'}
+      ${neighbors.next ? `<a class="neighbor next" href="${postUrl(neighbors.next.slug)}"><span class="lbl">Newer &rarr;</span><span>${esc(neighbors.next.title)}</span></a>` : '<span></span>'}
     </nav>
   </footer>
 </article>`;
 }
 
 export function pagePage(page, html) {
-  return `<nav class="crumbs"><a href="/">&larr; All posts</a></nav>
+  return `<nav class="crumbs"><a href="${u('/')}">&larr; All posts</a></nav>
 <article class="post page">
   <header class="post-head">
     <h1 class="post-title">${esc(page.title)}</h1>
@@ -278,7 +281,7 @@ export function tagsPage(idx) {
   <p class="mast-stats mono">${plural(tags.length, 'tag', 'tags')}, most used first.</p>
 </section>
 <section class="tag-grid">
-${tags.map((t) => `<a class="tag-card" href="/tags/${encodeURIComponent(t.key)}">
+${tags.map((t) => `<a class="tag-card" href="${u(`/tags/${encodeURIComponent(t.key)}`)}">
   <span class="tag-name">${esc(t.label)}</span>
   <span class="tag-count mono">${t.posts.length}</span>
 </a>`).join('')}
@@ -287,7 +290,7 @@ ${tags.length ? '' : '<p class="dim">No tags yet. Add <code>tags: [esp32, 3dprin
 }
 
 export function tagPage(tag, idx, tagSlug) {
-  return `<nav class="crumbs"><a href="/tags">&larr; All tags</a></nav>
+  return `<nav class="crumbs"><a href="${u('/tags')}">&larr; All tags</a></nav>
 <section class="masthead">
   <h1 class="mast-title">Tagged &ldquo;${esc(tag.label)}&rdquo;</h1>
   <p class="mast-stats mono">${plural(tag.posts.length, 'post', 'posts')}.</p>
@@ -311,6 +314,62 @@ export function errorPage(code, message) {
   return `<section class="panel empty center">
   ${art}
   <p>${esc(message)}</p>
-  <p><a href="/">Back to all posts</a></p>
+  <p><a href="${u('/')}">Back to all posts</a></p>
 </section>`;
+}
+
+/* ---------- non-HTML documents, shared by the server and the static build ---------- */
+
+// `base` is the full public origin plus base path, e.g. https://you.github.io/makersec-posts
+export function feedXml(idx, base, items) {
+  const entries = items.map(({ post, html }) => {
+    const url = `${base}/p/${encodeURIComponent(post.slug)}`;
+    return `  <item>
+    <title>${esc(post.title)}</title>
+    <link>${esc(url)}</link>
+    <guid isPermaLink="true">${esc(url)}</guid>
+    ${post.date ? `<pubDate>${new Date(post.date).toUTCString()}</pubDate>` : ''}
+    <description>${esc(post.summary)}</description>
+    ${post.tags.map((t) => `<category>${esc(t)}</category>`).join('')}
+    <content:encoded><![CDATA[${html.replace(/]]>/g, ']]&gt;')}]]></content:encoded>
+  </item>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>${esc(config.site.title)}</title>
+  <link>${esc(base)}/</link>
+  <atom:link href="${esc(base)}/feed.xml" rel="self" type="application/rss+xml"/>
+  <description>${esc(config.site.title)}</description>
+  <language>en</language>
+  <lastBuildDate>${new Date(idx.builtAt).toUTCString()}</lastBuildDate>
+${entries.join('\n')}
+</channel>
+</rss>`;
+}
+
+export function sitemapXml(idx, base) {
+  const urls = [
+    `<url><loc>${esc(base)}/</loc></url>`,
+    ...idx.posts.map((p) => `<url><loc>${esc(`${base}/p/${encodeURIComponent(p.slug)}`)}</loc>${p.dateISO ? `<lastmod>${p.dateISO.slice(0, 10)}</lastmod>` : ''}</url>`),
+    ...[...idx.tags.values()].map((t) => `<url><loc>${esc(`${base}/tags/${t.key}`)}</loc></url>`),
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.join('\n')}
+</urlset>`;
+}
+
+export function robotsTxt(base) {
+  if (config.isPrivate) return 'User-agent: *\nDisallow: /\n';
+  return `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`;
+}
+
+export function faviconSvg() {
+  const accent = config.isPrivate ? '#a78bfa' : '#38d9f5';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect width="32" height="32" rx="6" fill="#080b10"/>
+<path d="M3 21h5l3.5-10L15 28l3.5-12 2.5 5h8" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="3" cy="21" r="2.4" fill="${accent}"/><circle cx="29" cy="21" r="2.4" fill="${accent}"/>
+</svg>`;
 }

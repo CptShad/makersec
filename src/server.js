@@ -153,69 +153,31 @@ app.get('/feed.xml', async (req, reply) => {
   const idx = await getIndex();
   const base = config.site.url || `${req.protocol}://${req.headers.host}`;
   const items = [];
-  for (const post of idx.posts.slice(0, 20)) {
-    const html = await getHtml(post, idx);
-    const url = `${base}/p/${encodeURIComponent(post.slug)}`;
-    items.push(`  <item>
-    <title>${views.esc(post.title)}</title>
-    <link>${views.esc(url)}</link>
-    <guid isPermaLink="true">${views.esc(url)}</guid>
-    ${post.date ? `<pubDate>${new Date(post.date).toUTCString()}</pubDate>` : ''}
-    <description>${views.esc(post.summary)}</description>
-    ${post.tags.map((t) => `<category>${views.esc(t)}</category>`).join('')}
-    <content:encoded><![CDATA[${html.replace(/]]>/g, ']]&gt;')}]]></content:encoded>
-  </item>`);
-  }
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
-<channel>
-  <title>${views.esc(config.site.title)}</title>
-  <link>${views.esc(base)}</link>
-  <atom:link href="${views.esc(base)}/feed.xml" rel="self" type="application/rss+xml"/>
-  <description>${views.esc(config.site.title)}</description>
-  <language>en</language>
-  <lastBuildDate>${new Date(idx.builtAt).toUTCString()}</lastBuildDate>
-${items.join('\n')}
-</channel>
-</rss>`;
+  for (const post of idx.posts.slice(0, 20)) items.push({ post, html: await getHtml(post, idx) });
   reply.type('application/rss+xml; charset=utf-8');
   reply.header('cache-control', 'no-cache');
-  return reply.send(xml);
+  return reply.send(views.feedXml(idx, base, items));
 });
 
 app.get('/sitemap.xml', async (req, reply) => {
   if (config.isPrivate) return reply.code(404).type('text/plain').send('not found');
   const idx = await getIndex();
   const base = config.site.url || `${req.protocol}://${req.headers.host}`;
-  const urls = [
-    `<url><loc>${views.esc(base)}/</loc></url>`,
-    ...idx.posts.map((p) => `<url><loc>${views.esc(`${base}/p/${encodeURIComponent(p.slug)}`)}</loc>${p.dateISO ? `<lastmod>${p.dateISO.slice(0, 10)}</lastmod>` : ''}</url>`),
-    ...[...idx.tags.values()].map((t) => `<url><loc>${views.esc(`${base}/tags/${t.key}`)}</loc></url>`),
-  ];
   reply.type('application/xml; charset=utf-8');
-  return reply.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join('\n')}
-</urlset>`);
+  return reply.send(views.sitemapXml(idx, base));
 });
 
 app.get('/robots.txt', async (req, reply) => {
-  reply.type('text/plain');
-  if (config.isPrivate) return reply.send('User-agent: *\nDisallow: /\n');
   const base = config.site.url || `${req.protocol}://${req.headers.host}`;
-  return reply.send(`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
+  reply.type('text/plain');
+  return reply.send(views.robotsTxt(base));
 });
 
 // Favicon is generated so the private tab is visibly a different colour.
 app.get('/favicon.svg', async (req, reply) => {
-  const accent = config.isPrivate ? '#a78bfa' : '#38d9f5';
   reply.type('image/svg+xml');
   reply.header('cache-control', 'public, max-age=86400');
-  return reply.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-<rect width="32" height="32" rx="6" fill="#080b10"/>
-<path d="M3 21h5l3.5-10L15 28l3.5-12 2.5 5h8" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="3" cy="21" r="2.4" fill="${accent}"/><circle cx="29" cy="21" r="2.4" fill="${accent}"/>
-</svg>`);
+  return reply.send(views.faviconSvg());
 });
 
 app.get('/healthz', async (req, reply) => {

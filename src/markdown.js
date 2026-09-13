@@ -38,7 +38,7 @@ function rewriteAssets(md) {
     const token = tokens[idx];
     const src = token.attrGet('src') || '';
     if (!ABSOLUTE.test(src)) {
-      token.attrSet('src', `/media/${resolveRepoPath(env.dir || '', src).split('/').map(encodeURIComponent).join('/')}`);
+      token.attrSet('src', `${config.basePath}/media/${resolveRepoPath(env.dir || '', src).split('/').map(encodeURIComponent).join('/')}`);
     }
     token.attrSet('loading', 'lazy');
     token.attrSet('decoding', 'async');
@@ -54,7 +54,7 @@ function rewriteAssets(md) {
       const [file, hash = ''] = href.split('#');
       const target = resolveRepoPath(env.dir || '', file);
       const slug = env.slugByPath?.get(target);
-      if (slug) token.attrSet('href', `/p/${slug}${hash ? `#${hash}` : ''}`);
+      if (slug) token.attrSet('href', `${config.basePath}/p/${slug}${hash ? `#${hash}` : ''}`);
     } else if (/^https?:/i.test(href)) {
       token.attrSet('rel', 'noopener noreferrer');
       token.attrSet('target', '_blank');

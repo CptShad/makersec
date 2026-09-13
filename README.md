@@ -125,6 +125,36 @@ blog.example.com {
 }
 ```
 
+## Hosting the public site on GitHub Pages
+
+The public blog doesn't need a server. `npm run build` renders every page, tag, image
+and the RSS feed into `dist/` as plain files, using the same templates as the server.
+
+The posts repo carries a workflow (`.github/workflows/pages.yml`) that does this on
+every push: it checks out the posts, checks out this repo, builds, and publishes to
+Pages. To turn it on, open the posts repo's *Settings → Pages* and set the source to
+**GitHub Actions**. The site appears at `https://<you>.github.io/<posts-repo>/`.
+
+Optional repository variables (*Settings → Secrets and variables → Actions → Variables*):
+`SITE_TITLE`, `SITE_AUTHOR`, and `MAKERSEC_REPO` if this code lives somewhere other
+than `<you>/makersec`.
+
+A change to this code repo doesn't trigger a rebuild on its own; run the workflow by
+hand from the posts repo's *Actions* tab.
+
+Keep the **private** site on your own server. A Pages site is public even when the
+repo behind it is private.
+
+To build locally:
+
+```bash
+LOCAL_CONTENT=../makersec-posts BASE_PATH=/makersec-posts \
+SITE_URL=https://you.github.io/makersec-posts npm run build
+```
+
+On Windows Git Bash, prefix that with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
+`/makersec-posts` into a Windows path.
+
 ## Environment variables
 
 | Variable | Default | Meaning |
@@ -143,6 +173,8 @@ blog.example.com {
 | `EXCLUDE` | `README.md,LICENSE.md,CONTRIBUTING.md` | filenames to skip |
 | `REFRESH_TOKEN` | — | if set, `/api/refresh` requires `?token=` or `X-Refresh-Token` |
 | `LOCAL_CONTENT` | — | read a local folder instead of GitHub (dev/offline) |
+| `BASE_PATH` | *(none)* | serve from a sub-path, e.g. `/makersec-posts` on GitHub Pages |
+| `OUT_DIR` | `dist` | where `npm run build` writes the static site |
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | listen address inside the container |
 
 ## Routes
