@@ -69,8 +69,12 @@ Conventions worth knowing:
 - `README.md` and `LICENSE.md` are ignored. Anything starting with `_` is ignored.
 - Posts are numbered `#001` upward by date, oldest first, so numbers never shift.
 - Relative links between `.md` files are rewritten to the right `/p/slug` URL.
-- ` ```mermaid ` fences render as diagrams (mermaid loads from a CDN, only on pages
-  that contain one; without internet the code is shown as text).
+- ` ```mermaid ` fences render as diagrams in a Whimsical-like style: rounded pastel
+  boxes, curved grey connectors, tinted groups on a dotted canvas, redrawn when the
+  theme changes. Colour a node with a palette class: `blue`, `green`, `yellow`,
+  `pink`, `purple` or `gray`, e.g. `wyse("Dell Wyse<small>Bastion</small>"):::blue`.
+  `<small>` inside a label adds a quieter second line. Mermaid loads from a CDN only on
+  pages that contain a diagram; without internet the source is shown as text.
 - Task lists, footnotes, tables and `- [ ]` checkboxes all work.
 
 ## Setup

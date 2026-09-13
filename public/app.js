@@ -9,7 +9,8 @@
     root.dataset.theme = theme;
     try { localStorage.setItem('makersec-theme', theme); } catch (e) { /* private mode */ }
     var label = document.querySelector('.theme-label');
-    if (label) label.textContent = theme === "dark" ? "Dark" : "Light";
+    if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    document.dispatchEvent(new CustomEvent('makersec:theme', { detail: theme }));
   }
 
   (function initTheme() {
@@ -147,14 +148,117 @@
     }
   }
 
-  /* ---------- mermaid, only if the page actually has a diagram ---------- */
-  if (document.querySelector('pre.mermaid')) {
-    var script = document.createElement('script');
-    script.type = 'module';
-    script.textContent = [
-      "import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';",
-      "mermaid.initialize({ startOnLoad: true, theme: document.documentElement.dataset.theme === 'light' ? 'neutral' : 'dark', fontFamily: 'ui-monospace, monospace' });",
-    ].join('\n');
-    document.body.appendChild(script);
+  /* ---------- mermaid diagrams, styled after Whimsical ---------- */
+  // Soft pastel boxes, grey curved connectors, tinted containers. Authors can colour a
+  // node with a palette class, e.g.  wyse("Dell Wyse"):::blue
+  var PALETTE = {
+    light: {
+      blue:   ['#e3f0ff', '#9cc3f5', '#1d3b5c'],
+      green:  ['#e2f6ea', '#93d6ae', '#1b4a31'],
+      yellow: ['#fff5d6', '#f0cf73', '#5a4410'],
+      pink:   ['#fde7ef', '#f2a7c0', '#5e2138'],
+      purple: ['#eee8fd', '#bda9f2', '#35246a'],
+      gray:   ['#f1f3f5', '#cdd3da', '#2f3740'],
+    },
+    dark: {
+      blue:   ['#13263b', '#4a82c0', '#d3e6ff'],
+      green:  ['#122a1f', '#469d70', '#c9f1db'],
+      yellow: ['#2b2412', '#b8963e', '#f7e6b4'],
+      pink:   ['#2e1621', '#bb5d80', '#f9d3e1'],
+      purple: ['#1f1936', '#8270cc', '#e1d9ff'],
+      gray:   ['#161d26', '#3d4a59', '#d6dee8'],
+    },
+  };
+
+  function mermaidConfig(theme) {
+    var dark = theme === 'dark';
+    return {
+      startOnLoad: false,
+      theme: 'base',
+      look: 'classic',
+      fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      themeVariables: {
+        fontSize: '15px',
+        background: 'transparent',
+        primaryColor: dark ? '#161d26' : '#ffffff',
+        primaryBorderColor: dark ? '#3d4a59' : '#d5dbe2',
+        primaryTextColor: dark ? '#dce6f0' : '#1f2933',
+        secondaryColor: dark ? '#13263b' : '#e3f0ff',
+        tertiaryColor: dark ? '#122a1f' : '#e2f6ea',
+        lineColor: dark ? '#5d6d80' : '#a3adb8',
+        textColor: dark ? '#aab6c3' : '#3e4c59',
+        clusterBkg: dark ? 'rgba(148, 170, 200, 0.05)' : 'rgba(241, 244, 248, 0.85)',
+        clusterBorder: dark ? '#243140' : '#dfe4ea',
+        titleColor: dark ? '#95a4b6' : '#52606d',
+        edgeLabelBackground: dark ? '#0f151d' : '#ffffff',
+        nodeBorder: dark ? '#3d4a59' : '#d5dbe2',
+        mainBkg: dark ? '#161d26' : '#ffffff',
+      },
+      flowchart: { curve: 'basis', padding: 18, nodeSpacing: 46, rankSpacing: 58, htmlLabels: true, diagramPadding: 12, subGraphTitleMargin: { top: 8, bottom: 16 } },
+      sequence: { actorMargin: 60, boxMargin: 12, mirrorActors: false },
+    };
+  }
+
+  function withPalette(src, theme) {
+    if (!/^\s*(flowchart|graph)\b/.test(src)) return src;
+    var defs = Object.keys(PALETTE[theme]).map(function (name) {
+      var c = PALETTE[theme][name];
+      return '  classDef ' + name + ' fill:' + c[0] + ',stroke:' + c[1] + ',color:' + c[2] + ',stroke-width:1.5px';
+    });
+    return src.replace(/\s*$/, '') + '\n' + defs.join('\n') + '\n';
+  }
+
+  // Mermaid centres group titles on the top edge, right where arrows enter. Whimsical
+  // pins them to the top-left corner instead.
+  function pinClusterTitles(pre) {
+    Array.prototype.forEach.call(pre.querySelectorAll('g.cluster'), function (group) {
+      var rect = group.querySelector('rect');
+      var label = group.querySelector('.cluster-label');
+      if (!rect || !label) return;
+      var x = parseFloat(rect.getAttribute('x'));
+      var y = parseFloat(rect.getAttribute('y'));
+      if (isNaN(x) || isNaN(y)) return;
+      label.setAttribute('transform', 'translate(' + (x + 14) + ', ' + (y + 9) + ')');
+    });
+  }
+
+  var diagrams = Array.prototype.slice.call(document.querySelectorAll('pre.mermaid'));
+  if (diagrams.length) {
+    diagrams.forEach(function (pre) {
+      pre.dataset.source = pre.textContent;
+      pre.parentNode.classList.add('diagram-pending');
+    });
+
+    var mermaidLib = null;
+    var renderSeq = 0;
+
+    var render = function () {
+      if (!mermaidLib) return;
+      var theme = root.dataset.theme === 'light' ? 'light' : 'dark';
+      var seq = ++renderSeq;
+      mermaidLib.initialize(mermaidConfig(theme));
+      diagrams.forEach(function (pre) {
+        pre.removeAttribute('data-processed');
+        pre.textContent = withPalette(pre.dataset.source, theme);
+      });
+      mermaidLib.run({ nodes: diagrams }).catch(function (err) {
+        console.warn('mermaid failed', err);
+      }).then(function () {
+        if (seq !== renderSeq) return;
+        diagrams.forEach(function (pre) {
+          pinClusterTitles(pre);
+          pre.parentNode.classList.remove('diagram-pending');
+        });
+      });
+    };
+
+    import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')
+      .then(function (mod) { mermaidLib = mod.default; render(); })
+      .catch(function () {
+        // Offline or blocked CDN: show the diagram source instead of an empty box.
+        diagrams.forEach(function (pre) { pre.parentNode.classList.remove('diagram-pending'); });
+      });
+
+    document.addEventListener('makersec:theme', render);
   }
 })();

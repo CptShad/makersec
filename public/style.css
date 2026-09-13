@@ -28,6 +28,10 @@
   --dead: #64748b;
 
   --dot: rgba(140, 180, 220, 0.06);
+  --diagram-bg: #0c1118;
+  --diagram-dot: rgba(148, 170, 200, 0.12);
+  --diagram-shadow: rgba(0, 0, 0, 0.35);
+  --diagram-title: #95a4b6;
   --radius: 4px;
   --wrap: 1080px;
 }
@@ -52,6 +56,10 @@ html[data-theme="light"] {
   --idea: #7c3aed;
   --dead: #64748b;
   --dot: rgba(15, 23, 42, 0.06);
+  --diagram-bg: #fbfcfd;
+  --diagram-dot: rgba(15, 23, 42, 0.11);
+  --diagram-shadow: rgba(30, 41, 59, 0.07);
+  --diagram-title: #52606d;
 }
 
 html[data-mode="private"] {
@@ -363,8 +371,35 @@ html[data-theme="light"] .shiki, html[data-theme="light"] .shiki span {
   text-decoration: var(--shiki-light-text-decoration) !important;
 }
 
-.diagram { margin: 1.8em 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; overflow-x: auto; text-align: center; }
-.diagram pre { background: none !important; border: 0; margin: 0; padding: 0; }
+/* ---------- diagrams: Whimsical-style canvas ---------- */
+.diagram {
+  margin: 2em 0; padding: 32px 24px; overflow-x: auto; text-align: center;
+  border: 1px solid var(--line); border-radius: 14px;
+  background-color: var(--diagram-bg);
+  background-image: radial-gradient(circle, var(--diagram-dot) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+.diagram pre, .prose .diagram pre { background: none !important; border: 0; margin: 0; padding: 0; overflow: visible; }
+.diagram-pending pre { visibility: hidden; min-height: 160px; }
+.diagram svg { max-width: 100%; height: auto; }
+
+.diagram .node rect,
+.diagram .node .label-container { rx: 12px; ry: 12px; }
+.diagram .node rect,
+.diagram .node polygon,
+.diagram .node circle,
+.diagram .node path { filter: drop-shadow(0 1px 1px var(--diagram-shadow)) drop-shadow(0 6px 14px var(--diagram-shadow)); }
+.diagram .node .nodeLabel { font-weight: 500; line-height: 1.35; }
+.diagram .nodeLabel small { display: block; font-size: 12px; font-weight: 400; opacity: .72; margin-top: 2px; }
+
+.diagram .cluster rect { rx: 18px; ry: 18px; stroke-width: 1px; }
+.diagram .cluster .nodeLabel,
+.diagram .cluster-label .nodeLabel { font-size: 12.5px; font-weight: 600; letter-spacing: .01em; color: var(--diagram-title) !important; }
+
+.diagram .flowchart-link { stroke-width: 1.75px !important; stroke-linecap: round; }
+.diagram marker path { stroke: none; }
+.diagram .edgeLabel, .diagram .edgeLabel p { font-size: 12.5px; color: var(--ink-2); }
+.diagram .edgeLabel p, .diagram .labelBkg { background-color: var(--diagram-bg) !important; padding: 1px 6px; border-radius: 6px; }
 
 /* ---------- post footer ---------- */
 .post-foot { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 20px; }
