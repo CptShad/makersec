@@ -10,7 +10,7 @@ let mdPromise = null;
 const ABSOLUTE = /^([a-z][a-z0-9+.-]*:|\/\/|#|\/)/i;
 
 /** Resolve a link relative to the post's directory inside the repo. */
-export function resolveRepoPath(dir, rel) {
+function resolveRepoPath(dir, rel) {
   const parts = [...(dir ? dir.split('/') : []), ...rel.split('/')];
   const out = [];
   for (const part of parts) {
@@ -64,9 +64,8 @@ function rewriteAssets(md) {
   };
 }
 
-export async function getMarkdown() {
-  if (mdPromise) return mdPromise;
-  mdPromise = (async () => {
+function getMarkdown() {
+  mdPromise ??= (async () => {
     const md = new MarkdownIt({ html: true, linkify: true, typographer: true, breaks: false });
 
     md.use(
@@ -94,9 +93,4 @@ export async function getMarkdown() {
 export async function render(body, env = {}) {
   const md = await getMarkdown();
   return md.render(body, env);
-}
-
-export async function renderInline(body, env = {}) {
-  const md = await getMarkdown();
-  return md.renderInline(body, env);
 }

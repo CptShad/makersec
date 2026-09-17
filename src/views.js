@@ -1,6 +1,34 @@
 import { config, u } from './config.js';
+import { slugify } from './content.js';
 
-export function esc(value) {
+// Visitor-selectable themes: [id, label, three swatch colours for the picker].
+// The first is the default; each id needs a matching block in public/style.css (see THEMES.md).
+export const THEMES = [
+  ['perfboard', 'Perfboard', ['#080b10', '#38d9f5', '#7c8cff']],
+  ['glass', 'Glass', ['#6366f1', '#ec4899', '#14b8a6']],
+  ['brutal', 'Brutalist', ['#f6f1e7', '#e8431f', '#3b5bff']],
+  ['synthwave', 'Synthwave', ['#12002b', '#ff3cac', '#2de2e6']],
+];
+const THEME_IDS = THEMES.map(([id]) => id);
+
+const swatch = ([a, b, c]) => `<span class="swatch" style="--sw-1:${a};--sw-2:${b};--sw-3:${c}" aria-hidden="true"></span>`;
+
+// Rendered hidden: it needs JS, which reveals it. A listbox rather than <select> so the
+// open list can be themed too.
+function themePicker() {
+  const [defaultId, defaultLabel, defaultSwatch] = THEMES[0];
+  const options = THEMES.map(([id, label, colours]) =>
+    `<li role="option" id="theme-opt-${id}" data-value="${id}" aria-selected="${id === defaultId}">${swatch(colours)}<span>${label}</span></li>`).join('');
+  return `<div class="theme-pick" data-theme-picker hidden>
+      <button class="theme theme-pick-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme: ${defaultLabel}">
+        ${swatch(defaultSwatch)}<span class="theme-pick-label">${defaultLabel}</span>
+        <svg class="theme-pick-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <ul class="theme-menu" role="listbox" tabindex="-1" aria-label="Theme" hidden>${options}</ul>
+    </div>`;
+}
+
+function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -15,7 +43,7 @@ const ASSET_V = Date.now().toString(36);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function dateStamp(date) {
+function dateStamp(date) {
   if (!date) return '';
   const d = new Date(date);
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
@@ -34,7 +62,7 @@ const STATUS_MAP = [
   [/^(draft|unfinished)$/i, 'draft', 'Draft'],
 ];
 
-export function statusBadge(status) {
+function statusBadge(status) {
   if (!status) return '';
   const hit = STATUS_MAP.find(([re]) => re.test(status.trim()));
   const cls = hit ? hit[1] : 'note';
@@ -42,10 +70,8 @@ export function statusBadge(status) {
   return `<span class="status status-${cls}">${esc(label)}</span>`;
 }
 
-const DRAFT_BADGE = '<span class="status status-draft">Draft</span>';
-
-function tagChip(tag, slug) {
-  return `<a class="chip" href="${u(`/tags/${encodeURIComponent(slug)}`)}">${esc(tag)}</a>`;
+function tagChip(tag) {
+  return `<a class="chip" href="${u(`/tags/${encodeURIComponent(slugify(tag))}`)}">${esc(tag)}</a>`;
 }
 
 const MARK = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -75,7 +101,7 @@ export function layout({ title, description, body, active = '', idx, canonical =
   const srcLabel = site.showSource && config.repo ? config.repo : '';
 
   return `<!doctype html>
-<html lang="en" data-theme="dark" data-mode="${config.mode}">
+<html lang="en" data-theme="${THEME_IDS[0]}" data-scheme="dark" data-mode="${config.mode}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -91,7 +117,7 @@ ${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
 <link rel="stylesheet" href="${u('/static/style.css')}?v=${ASSET_V}">
 <link rel="icon" href="${u('/favicon.svg')}" type="image/svg+xml">
 <link rel="alternate" type="application/rss+xml" title="${esc(site.title)}" href="${u('/feed.xml')}">
-<script>try{var t=localStorage.getItem('makersec-theme');if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)t='light';if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<script>try{var d=document.documentElement,s=localStorage.getItem('makersec-scheme'),t=localStorage.getItem('makersec-theme');if(!s&&(t==='dark'||t==='light'))s=t;if(!s&&window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)s='light';if(s)d.dataset.scheme=s;if(${JSON.stringify(THEME_IDS)}.indexOf(t)>-1)d.dataset.theme=t;}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -104,7 +130,8 @@ ${config.isPrivate ? '<div class="hazard" role="presentation"></div>' : '<div cl
       ${config.isPrivate ? '<span class="status status-private">Private</span>' : ''}
     </a>
     <nav class="nav">${nav(active, idx)}</nav>
-    <button class="theme" type="button" data-theme-toggle aria-label="Toggle theme">
+    ${themePicker()}
+    <button class="theme" type="button" data-scheme-toggle aria-label="Toggle dark and light">
       <span class="theme-dot"></span><span class="theme-label">Dark</span>
     </button>
   </div>
@@ -130,15 +157,15 @@ ${body}
 </html>`;
 }
 
-export function postCard(post, tagSlug) {
-  const tags = post.tags.map((t) => tagChip(t, tagSlug(t))).join('');
-  return `<article class="card" data-search="${esc((post.title + ' ' + post.summary + ' ' + post.tags.join(' ')).toLowerCase())}" data-tags="${esc(post.tags.map(tagSlug).join(' '))}">
+function postCard(post) {
+  const tags = post.tags.map(tagChip).join('');
+  return `<article class="card" data-search="${esc((post.title + ' ' + post.summary + ' ' + post.tags.join(' ')).toLowerCase())}" data-tags="${esc(post.tags.map(slugify).join(' '))}">
   <div class="card-rail">
     <span class="num">#${post.n || '000'}</span>
     <span class="stamp">${dateStamp(post.date) || 'Undated'}</span>
   </div>
   <div class="card-body">
-    <h2 class="card-title"><a href="${postUrl(post.slug)}">${esc(post.title)}</a>${post.status ? ' ' + statusBadge(post.status) : ''}${post.draft && !post.status ? ' ' + DRAFT_BADGE : ''}</h2>
+    <h2 class="card-title"><a href="${postUrl(post.slug)}">${esc(post.title)}</a>${post.status ? ' ' + statusBadge(post.status) : ''}${post.draft && !post.status ? ' ' + statusBadge('draft') : ''}</h2>
     <p class="card-sum">${esc(post.summary)}</p>
     <div class="card-meta">
       ${tags ? `<div class="chips">${tags}</div>` : '<div></div>'}
@@ -148,7 +175,7 @@ export function postCard(post, tagSlug) {
 </article>`;
 }
 
-export function indexPage(idx, tagSlug) {
+export function indexPage(idx) {
   const posts = idx.posts;
   const tags = [...idx.tags.values()].sort((a, b) => b.posts.length - a.posts.length);
 
@@ -192,7 +219,7 @@ ${posts.length ? `<section class="toolbar">
   </div>
 </section>` : ''}
 <section class="feed" id="feed">
-${posts.length ? posts.map((p) => postCard(p, tagSlug)).join('\n') : empty}
+${posts.length ? posts.map(postCard).join('\n') : empty}
 </section>
 <p class="no-results" hidden>No posts match that. <button type="button" class="linkish" data-clear>Clear filters</button></p>`;
 }
@@ -204,8 +231,8 @@ function sideList(title, items) {
   </div>`;
 }
 
-export function postPage(post, html, idx, tagSlug, neighbors) {
-  const tags = post.tags.map((t) => tagChip(t, tagSlug(t))).join('');
+export function postPage(post, html, neighbors) {
+  const tags = post.tags.map(tagChip).join('');
   const sideBlocks = [];
 
   if (post.parts.length) sideBlocks.push(sideList('Bill of materials', post.parts.map((p) => `<li>${esc(p)}</li>`)));
@@ -239,7 +266,7 @@ export function postPage(post, html, idx, tagSlug, neighbors) {
     <div class="post-stampline mono">
       ${meta}
       ${post.status ? statusBadge(post.status) : ''}
-      ${post.draft ? DRAFT_BADGE : ''}
+      ${post.draft ? statusBadge('draft') : ''}
     </div>
     <h1 class="post-title">${esc(post.title)}</h1>
     ${post.summary ? `<p class="post-sum">${esc(post.summary)}</p>` : ''}
@@ -289,13 +316,13 @@ ${tags.length ? '' : '<p class="dim">No tags yet. Add <code>tags: [esp32, 3dprin
 </section>`;
 }
 
-export function tagPage(tag, idx, tagSlug) {
+export function tagPage(tag) {
   return `<nav class="crumbs"><a href="${u('/tags')}">&larr; All tags</a></nav>
 <section class="masthead">
   <h1 class="mast-title">Tagged &ldquo;${esc(tag.label)}&rdquo;</h1>
   <p class="mast-stats mono">${plural(tag.posts.length, 'post', 'posts')}.</p>
 </section>
-<section class="feed">${tag.posts.map((p) => postCard(p, tagSlug)).join('\n')}</section>`;
+<section class="feed">${tag.posts.map(postCard).join('\n')}</section>`;
 }
 
 export function errorPage(code, message) {

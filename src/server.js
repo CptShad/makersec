@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { config, assertConfig } from './config.js';
 import { getIndex, getHtml, getMedia, invalidate, slugify, source } from './content.js';
+import * as pages from './pages.js';
 import * as views from './views.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,8 @@ await app.register(fastifyStatic, {
   maxAge: '7d',
 });
 
-const tagSlug = (tag) => slugify(tag);
+// Feed and sitemap links need an absolute origin; without SITE_URL, use the request's.
+const siteBase = (req) => config.site.url || `${req.protocol}://${req.headers.host}`;
 
 function sendHtml(reply, html, { etag } = {}) {
   if (etag) reply.header('etag', `"${etag}"`);
@@ -50,29 +52,19 @@ app.get('/', async (req, reply) => {
   const idx = await getIndex();
   const etag = `i-${BOOT}-${idx.version}-${idx.posts.length}`;
   if (notModified(req, etag)) return reply.code(304).send();
-  const body = views.indexPage(idx, tagSlug);
-  return sendHtml(reply, views.layout({ body, active: '/', idx, canonical: '/' }), { etag });
+  return sendHtml(reply, pages.indexHtml(idx), { etag });
 });
 
 app.get('/tags', async (req, reply) => {
   const idx = await getIndex();
-  const body = views.tagsPage(idx);
-  return sendHtml(reply, views.layout({ title: 'Tags', body, active: '/tags', idx, canonical: '/tags' }));
+  return sendHtml(reply, pages.tagsHtml(idx));
 });
 
 app.get('/tags/:tag', async (req, reply) => {
   const idx = await getIndex();
   const tag = idx.tags.get(slugify(req.params.tag));
   if (!tag) return send404(reply, idx);
-  const body = views.tagPage(tag, idx, tagSlug);
-  return sendHtml(reply, views.layout({
-    title: `#${tag.label}`,
-    description: `Entries tagged ${tag.label}`,
-    body,
-    active: '/tags',
-    idx,
-    canonical: `/tags/${tag.key}`,
-  }));
+  return sendHtml(reply, pages.tagHtml(tag, idx));
 });
 
 app.get('/p/:slug', async (req, reply) => {
@@ -91,17 +83,7 @@ app.get('/p/:slug', async (req, reply) => {
   const etag = `p-${BOOT}-${post.sha}`;
   if (notModified(req, etag)) return reply.code(304).send();
 
-  const html = await getHtml(post, idx);
-  const i = idx.posts.indexOf(post);
-  const neighbors = { next: idx.posts[i - 1] || null, prev: idx.posts[i + 1] || null };
-  const body = views.postPage(post, html, idx, tagSlug, neighbors);
-  return sendHtml(reply, views.layout({
-    title: post.title,
-    description: post.summary,
-    body,
-    idx,
-    canonical: `/p/${post.slug}`,
-  }), { etag });
+  return sendHtml(reply, pages.postHtml(post, await getHtml(post, idx), idx), { etag });
 });
 
 // Standalone pages: /about, /uses, /now, /colophon, /contact
@@ -109,16 +91,7 @@ app.get('/:page', async (req, reply) => {
   const idx = await getIndex();
   const page = idx.pages.get(slugify(req.params.page));
   if (!page) return send404(reply, idx);
-  const html = await getHtml(page, idx);
-  const body = views.pagePage(page, html);
-  return sendHtml(reply, views.layout({
-    title: page.title,
-    description: page.summary,
-    body,
-    active: `/${page.slug}`,
-    idx,
-    canonical: `/${page.slug}`,
-  }));
+  return sendHtml(reply, pages.standaloneHtml(page, await getHtml(page, idx), idx));
 });
 
 app.get('/media/*', async (req, reply) => {
@@ -151,26 +124,23 @@ app.get('/api/posts.json', async (req, reply) => {
 
 app.get('/feed.xml', async (req, reply) => {
   const idx = await getIndex();
-  const base = config.site.url || `${req.protocol}://${req.headers.host}`;
   const items = [];
   for (const post of idx.posts.slice(0, 20)) items.push({ post, html: await getHtml(post, idx) });
   reply.type('application/rss+xml; charset=utf-8');
   reply.header('cache-control', 'no-cache');
-  return reply.send(views.feedXml(idx, base, items));
+  return reply.send(views.feedXml(idx, siteBase(req), items));
 });
 
 app.get('/sitemap.xml', async (req, reply) => {
   if (config.isPrivate) return reply.code(404).type('text/plain').send('not found');
   const idx = await getIndex();
-  const base = config.site.url || `${req.protocol}://${req.headers.host}`;
   reply.type('application/xml; charset=utf-8');
-  return reply.send(views.sitemapXml(idx, base));
+  return reply.send(views.sitemapXml(idx, siteBase(req)));
 });
 
 app.get('/robots.txt', async (req, reply) => {
-  const base = config.site.url || `${req.protocol}://${req.headers.host}`;
   reply.type('text/plain');
-  return reply.send(views.robotsTxt(base));
+  return reply.send(views.robotsTxt(siteBase(req)));
 });
 
 // Favicon is generated so the private tab is visibly a different colour.
@@ -266,11 +236,7 @@ app.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
 
 function send404(reply, idx) {
   reply.code(404);
-  return sendHtml(reply, views.layout({
-    title: 'Not found',
-    body: views.errorPage(404, 'That page is not on this bench.'),
-    idx,
-  }));
+  return sendHtml(reply, pages.errorHtml(404, pages.NOT_FOUND, idx));
 }
 
 app.setNotFoundHandler(async (req, reply) => {
@@ -281,11 +247,11 @@ app.setNotFoundHandler(async (req, reply) => {
 
 app.setErrorHandler(async (err, req, reply) => {
   req.log.error({ err }, 'request failed');
-  reply.code(err.statusCode || 500);
-  const body = views.errorPage(err.statusCode || 500, err.statusCode === 404
-    ? 'That page is not on this bench.'
-    : 'The server could not fetch or render that. Check /healthz for details.');
-  return sendHtml(reply, views.layout({ title: 'Error', body }));
+  const code = err.statusCode || 500;
+  reply.code(code);
+  return sendHtml(reply, pages.errorHtml(code, code === 404
+    ? pages.NOT_FOUND
+    : 'The server could not fetch or render that. Check /healthz for details.'));
 });
 
 try {

@@ -4,26 +4,109 @@
 
   var root = document.documentElement;
 
-  /* ---------- theme ---------- */
-  function applyTheme(theme) {
-    root.dataset.theme = theme;
-    try { localStorage.setItem('makersec-theme', theme); } catch (e) { /* private mode */ }
-    var label = document.querySelector('.theme-label');
-    if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
-    document.dispatchEvent(new CustomEvent('makersec:theme', { detail: theme }));
+  /* ---------- look: dark/light scheme and visual theme ---------- */
+  // The inline script in <head> applies stored choices before first paint; this only
+  // keeps the controls in step and saves changes.
+  try {
+    // Before themes existed, 'makersec-theme' held the scheme.
+    var legacy = localStorage.getItem('makersec-theme');
+    if (legacy === 'dark' || legacy === 'light') {
+      if (!localStorage.getItem('makersec-scheme')) localStorage.setItem('makersec-scheme', legacy);
+      localStorage.removeItem('makersec-theme');
+    }
+  } catch (e) { /* storage unavailable */ }
+
+  var schemeLabel = document.querySelector('.theme-label');
+  var picker = document.querySelector('[data-theme-picker]');
+  var pickBtn = picker && picker.querySelector('.theme-pick-btn');
+  var menu = picker && picker.querySelector('[role="listbox"]');
+  var options = menu ? Array.prototype.slice.call(menu.querySelectorAll('[role="option"]')) : [];
+  var active = -1;
+
+  function syncControls() {
+    if (schemeLabel) schemeLabel.textContent = root.dataset.scheme === 'light' ? 'Light' : 'Dark';
+    if (!picker) return;
+    options.forEach(function (opt) {
+      var on = opt.dataset.value === root.dataset.theme;
+      opt.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (!on) return;
+      var label = opt.textContent.trim();
+      pickBtn.querySelector('.theme-pick-label').textContent = label;
+      pickBtn.querySelector('.swatch').setAttribute('style', opt.querySelector('.swatch').getAttribute('style'));
+      pickBtn.setAttribute('aria-label', 'Theme: ' + label);
+    });
   }
 
-  (function initTheme() {
-    var stored = null;
-    try { stored = localStorage.getItem('makersec-theme'); } catch (e) { /* ignore */ }
-    if (!stored && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) stored = 'light';
-    applyTheme(stored || 'dark');
-  })();
+  function setLook(key, value) {
+    root.dataset[key] = value;
+    try { localStorage.setItem('makersec-' + key, value); } catch (e) { /* private mode */ }
+    syncControls();
+    document.dispatchEvent(new CustomEvent('makersec:look'));
+  }
+
+  /* theme picker: a listbox opened from a button */
+  function highlight(i) {
+    active = (i + options.length) % options.length;
+    options.forEach(function (opt, n) { opt.classList.toggle('active', n === active); });
+    menu.setAttribute('aria-activedescendant', options[active].id);
+  }
+
+  function openMenu() {
+    menu.hidden = false;
+    pickBtn.setAttribute('aria-expanded', 'true');
+    highlight(Math.max(0, options.findIndex(function (o) { return o.dataset.value === root.dataset.theme; })));
+    menu.focus();
+  }
+
+  function closeMenu(refocus) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    pickBtn.setAttribute('aria-expanded', 'false');
+    if (refocus) pickBtn.focus();
+  }
+
+  function choose(i) {
+    setLook('theme', options[i].dataset.value);
+    closeMenu(true);
+  }
+
+  syncControls();
+  if (picker) {
+    picker.hidden = false;
+
+    pickBtn.addEventListener('click', function () {
+      if (menu.hidden) openMenu(); else closeMenu(true);
+    });
+    pickBtn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openMenu(); }
+    });
+
+    menu.addEventListener('keydown', function (e) {
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); highlight(active + 1); break;
+        case 'ArrowUp': e.preventDefault(); highlight(active - 1); break;
+        case 'Home': e.preventDefault(); highlight(0); break;
+        case 'End': e.preventDefault(); highlight(options.length - 1); break;
+        case 'Enter':
+        case ' ': e.preventDefault(); choose(active); break;
+        case 'Escape': e.preventDefault(); closeMenu(true); break;
+        case 'Tab': closeMenu(false); break;
+      }
+    });
+
+    options.forEach(function (opt, i) {
+      opt.addEventListener('mousemove', function () { if (i !== active) highlight(i); });
+      opt.addEventListener('click', function () { choose(i); });
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!picker.contains(e.target)) closeMenu(false);
+    });
+  }
 
   document.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-theme-toggle]');
-    if (!btn) return;
-    applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+    if (!e.target.closest('[data-scheme-toggle]')) return;
+    setLook('scheme', root.dataset.scheme === 'light' ? 'dark' : 'light');
   });
 
   /* ---------- index filtering ---------- */
@@ -170,8 +253,12 @@
     },
   };
 
-  function mermaidConfig(theme) {
-    var dark = theme === 'dark';
+  // Diagram colours come from the active theme's --diagram-* tokens in style.css.
+  function token(name) {
+    return getComputedStyle(root).getPropertyValue(name).trim();
+  }
+
+  function mermaidConfig() {
     return {
       startOnLoad: false,
       theme: 'base',
@@ -180,19 +267,19 @@
       themeVariables: {
         fontSize: '15px',
         background: 'transparent',
-        primaryColor: dark ? '#161d26' : '#ffffff',
-        primaryBorderColor: dark ? '#3d4a59' : '#d5dbe2',
-        primaryTextColor: dark ? '#dce6f0' : '#1f2933',
-        secondaryColor: dark ? '#13263b' : '#e3f0ff',
-        tertiaryColor: dark ? '#122a1f' : '#e2f6ea',
-        lineColor: dark ? '#5d6d80' : '#a3adb8',
-        textColor: dark ? '#aab6c3' : '#3e4c59',
-        clusterBkg: dark ? 'rgba(148, 170, 200, 0.05)' : 'rgba(241, 244, 248, 0.85)',
-        clusterBorder: dark ? '#243140' : '#dfe4ea',
-        titleColor: dark ? '#95a4b6' : '#52606d',
-        edgeLabelBackground: dark ? '#0f151d' : '#ffffff',
-        nodeBorder: dark ? '#3d4a59' : '#d5dbe2',
-        mainBkg: dark ? '#161d26' : '#ffffff',
+        primaryColor: token('--diagram-node'),
+        primaryBorderColor: token('--diagram-node-border'),
+        primaryTextColor: token('--diagram-node-text'),
+        secondaryColor: token('--diagram-secondary'),
+        tertiaryColor: token('--diagram-tertiary'),
+        lineColor: token('--diagram-line'),
+        textColor: token('--diagram-text'),
+        clusterBkg: token('--diagram-group'),
+        clusterBorder: token('--diagram-group-border'),
+        titleColor: token('--diagram-title'),
+        edgeLabelBackground: token('--diagram-edge-label'),
+        nodeBorder: token('--diagram-node-border'),
+        mainBkg: token('--diagram-node'),
       },
       flowchart: { curve: 'basis', padding: 18, nodeSpacing: 46, rankSpacing: 58, htmlLabels: true, diagramPadding: 12, subGraphTitleMargin: { top: 8, bottom: 16 } },
       sequence: { actorMargin: 60, boxMargin: 12, mirrorActors: false },
@@ -234,12 +321,12 @@
 
     var render = function () {
       if (!mermaidLib) return;
-      var theme = root.dataset.theme === 'light' ? 'light' : 'dark';
+      var scheme = root.dataset.scheme === 'light' ? 'light' : 'dark';
       var seq = ++renderSeq;
-      mermaidLib.initialize(mermaidConfig(theme));
+      mermaidLib.initialize(mermaidConfig());
       diagrams.forEach(function (pre) {
         pre.removeAttribute('data-processed');
-        pre.textContent = withPalette(pre.dataset.source, theme);
+        pre.textContent = withPalette(pre.dataset.source, scheme);
       });
       mermaidLib.run({ nodes: diagrams }).catch(function (err) {
         console.warn('mermaid failed', err);
@@ -259,6 +346,6 @@
         diagrams.forEach(function (pre) { pre.parentNode.classList.remove('diagram-pending'); });
       });
 
-    document.addEventListener('makersec:theme', render);
+    document.addEventListener('makersec:look', render);
   }
 })();

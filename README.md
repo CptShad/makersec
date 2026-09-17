@@ -76,12 +76,15 @@ Conventions worth knowing:
   `<small>` inside a label adds a quieter second line. Mermaid loads from a CDN only on
   pages that contain a diagram; without internet the source is shown as text.
 - Task lists, footnotes, tables and `- [ ]` checkboxes all work.
+- Visitors can switch between themes (Perfboard, Glass, Brutalist, Synthwave) from the
+  header, independently of dark/light. A theme only changes colours, type and
+  decoration, never layout. [THEMES.md](THEMES.md) has the rules and how to add one.
 
 ## Setup
 
 ### 1. Two repos
 
-Make `yourname/makersec-posts` (public) and `yourname/makersec-private` (private).
+Make `yourname/makersec-posts` (public) and `yourname/makersec-posts-private` (private).
 Put your `.md` files at the root or in a `posts/` folder.
 
 ### 2. A token

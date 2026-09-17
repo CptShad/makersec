@@ -10,14 +10,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config, assertConfig } from './config.js';
-import { getIndex, getHtml, slugify, source } from './content.js';
+import { getIndex, getHtml, source } from './content.js';
+import * as pages from './pages.js';
 import * as views from './views.js';
 
 config.isStatic = true;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(process.env.OUT_DIR || 'dist');
-const tagSlug = (tag) => slugify(tag);
 // Absolute URLs in the feed and sitemap need a real origin; fall back to the base path.
 const base = config.site.url || config.basePath;
 
@@ -49,46 +49,21 @@ for (const err of idx.errors) console.warn(`skipped ${err.path}: ${err.error}`);
 
 await fs.rm(outDir, { recursive: true, force: true });
 
-await write('index.html', views.layout({ body: views.indexPage(idx, tagSlug), active: '/', idx, canonical: '/' }));
+await write('index.html', pages.indexHtml(idx));
 
-for (const [i, post] of idx.posts.entries()) {
-  const html = await getHtml(post, idx);
-  const neighbors = { next: idx.posts[i - 1] || null, prev: idx.posts[i + 1] || null };
-  await write(`p/${post.slug}.html`, views.layout({
-    title: post.title,
-    description: post.summary,
-    body: views.postPage(post, html, idx, tagSlug, neighbors),
-    idx,
-    canonical: `/p/${post.slug}`,
-  }));
+for (const post of idx.posts) {
+  await write(`p/${post.slug}.html`, pages.postHtml(post, await getHtml(post, idx), idx));
   await write(`p/${post.slug}.md`, post.body);
 }
 
 for (const page of idx.pages.values()) {
-  const html = await getHtml(page, idx);
-  await write(`${page.slug}.html`, views.layout({
-    title: page.title,
-    description: page.summary,
-    body: views.pagePage(page, html),
-    active: `/${page.slug}`,
-    idx,
-    canonical: `/${page.slug}`,
-  }));
+  await write(`${page.slug}.html`, pages.standaloneHtml(page, await getHtml(page, idx), idx));
 }
 
-await write('tags.html', views.layout({ title: 'Tags', body: views.tagsPage(idx), active: '/tags', idx, canonical: '/tags' }));
-for (const tag of idx.tags.values()) {
-  await write(`tags/${tag.key}.html`, views.layout({
-    title: `#${tag.label}`,
-    description: `Posts tagged ${tag.label}`,
-    body: views.tagPage(tag, idx, tagSlug),
-    active: '/tags',
-    idx,
-    canonical: `/tags/${tag.key}`,
-  }));
-}
+await write('tags.html', pages.tagsHtml(idx));
+for (const tag of idx.tags.values()) await write(`tags/${tag.key}.html`, pages.tagHtml(tag, idx));
 
-await write('404.html', views.layout({ title: 'Not found', body: views.errorPage(404, 'That page is not on this bench.'), idx }));
+await write('404.html', pages.errorHtml(404, pages.NOT_FOUND, idx));
 
 const feedItems = [];
 for (const post of idx.posts.slice(0, 20)) feedItems.push({ post, html: await getHtml(post, idx) });

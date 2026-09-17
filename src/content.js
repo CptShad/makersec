@@ -8,6 +8,8 @@ export const source = config.localContent ? local : github;
 
 const MEDIA_EXT = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|mp3|ogg|wav|pdf|stl|zip|txt|csv|json|ino|py|sch|kicad_pcb|kicad_sch|step|3mf|gcode)$/i;
 const DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})[-_. ]+/;
+// Root-level files with these names are standalone pages, outside the post stream.
+const PAGE_NAMES = new Set(['about', 'now', 'uses', 'colophon', 'contact']);
 
 let index = null;
 let building = null;
@@ -31,7 +33,7 @@ function parseDate(data, file) {
   return null;
 }
 
-function slugify(text) {
+export function slugify(text) {
   return String(text).toLowerCase().trim()
     .replace(/[^\w\s-]/g, '')
     .replace(/[\s_]+/g, '-')
@@ -152,12 +154,10 @@ async function build(force) {
   const errors = parsed.filter((p) => p.error);
   const all = parsed.filter((p) => !p.error);
 
-  // A standalone page (about.md, now.md, uses.md) sits outside the post stream.
-  const pageNames = new Set(['about', 'now', 'uses', 'colophon', 'contact']);
   const pages = new Map();
   const posts = [];
   for (const item of all) {
-    if (!item.dir && pageNames.has(item.slug)) pages.set(item.slug, item);
+    if (!item.dir && PAGE_NAMES.has(item.slug)) pages.set(item.slug, item);
     else posts.push(item);
   }
 
@@ -252,5 +252,3 @@ export function invalidate() {
   index = null;
   htmlCache.clear();
 }
-
-export { slugify };
