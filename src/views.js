@@ -6,7 +6,7 @@ import { slugify } from './content.js';
 export const THEMES = [
   ['perfboard', 'Perfboard', ['#080b10', '#38d9f5', '#7c8cff']],
   ['glass', 'Glass', ['#6366f1', '#ec4899', '#14b8a6']],
-  ['brutal', 'Brutalist', ['#f6f1e7', '#e8431f', '#3b5bff']],
+  ['brutal', 'Brutalist', ['#f6f1e7', '#ca3515', '#3b5bff']],
   ['synthwave', 'Synthwave', ['#12002b', '#ff3cac', '#2de2e6']],
 ];
 const THEME_IDS = THEMES.map(([id]) => id);
@@ -28,7 +28,7 @@ function themePicker() {
     </div>`;
 }
 
-function esc(value) {
+export function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -39,7 +39,7 @@ function esc(value) {
 
 // Static assets are served with a long max-age, so a deploy has to change the URL
 // or returning visitors keep the old CSS. Restarting the process (or rebuilding) is the deploy.
-const ASSET_V = Date.now().toString(36);
+export const ASSET_V = Date.now().toString(36);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -93,7 +93,7 @@ function nav(active, idx) {
     .join('');
 }
 
-export function layout({ title, description, body, active = '', idx, canonical = '', ogImage = '' }) {
+export function layout({ title, description, body, active = '', idx, canonical = '' }) {
   const site = config.site;
   const fullTitle = title ? `${title} | ${site.title}` : site.title;
   const desc = description || site.title;
@@ -113,7 +113,6 @@ ${config.isPrivate ? '<meta name="robots" content="noindex, nofollow">' : ''}
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:type" content="website">
 ${canonical && site.url ? `<link rel="canonical" href="${esc(site.url + canonical)}">` : ''}
-${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
 <link rel="stylesheet" href="${u('/static/style.css')}?v=${ASSET_V}">
 <link rel="icon" href="${u('/favicon.svg')}" type="image/svg+xml">
 <link rel="alternate" type="application/rss+xml" title="${esc(site.title)}" href="${u('/feed.xml')}">
@@ -343,60 +342,4 @@ export function errorPage(code, message) {
   <p>${esc(message)}</p>
   <p><a href="${u('/')}">Back to all posts</a></p>
 </section>`;
-}
-
-/* ---------- non-HTML documents, shared by the server and the static build ---------- */
-
-// `base` is the full public origin plus base path, e.g. https://you.github.io/makersec-posts
-export function feedXml(idx, base, items) {
-  const entries = items.map(({ post, html }) => {
-    const url = `${base}/p/${encodeURIComponent(post.slug)}`;
-    return `  <item>
-    <title>${esc(post.title)}</title>
-    <link>${esc(url)}</link>
-    <guid isPermaLink="true">${esc(url)}</guid>
-    ${post.date ? `<pubDate>${new Date(post.date).toUTCString()}</pubDate>` : ''}
-    <description>${esc(post.summary)}</description>
-    ${post.tags.map((t) => `<category>${esc(t)}</category>`).join('')}
-    <content:encoded><![CDATA[${html.replace(/]]>/g, ']]&gt;')}]]></content:encoded>
-  </item>`;
-  });
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
-<channel>
-  <title>${esc(config.site.title)}</title>
-  <link>${esc(base)}/</link>
-  <atom:link href="${esc(base)}/feed.xml" rel="self" type="application/rss+xml"/>
-  <description>${esc(config.site.title)}</description>
-  <language>en</language>
-  <lastBuildDate>${new Date(idx.builtAt).toUTCString()}</lastBuildDate>
-${entries.join('\n')}
-</channel>
-</rss>`;
-}
-
-export function sitemapXml(idx, base) {
-  const urls = [
-    `<url><loc>${esc(base)}/</loc></url>`,
-    ...idx.posts.map((p) => `<url><loc>${esc(`${base}/p/${encodeURIComponent(p.slug)}`)}</loc>${p.dateISO ? `<lastmod>${p.dateISO.slice(0, 10)}</lastmod>` : ''}</url>`),
-    ...[...idx.tags.values()].map((t) => `<url><loc>${esc(`${base}/tags/${t.key}`)}</loc></url>`),
-  ];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join('\n')}
-</urlset>`;
-}
-
-export function robotsTxt(base) {
-  if (config.isPrivate) return 'User-agent: *\nDisallow: /\n';
-  return `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`;
-}
-
-export function faviconSvg() {
-  const accent = config.isPrivate ? '#a78bfa' : '#38d9f5';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-<rect width="32" height="32" rx="6" fill="#080b10"/>
-<path d="M3 21h5l3.5-10L15 28l3.5-12 2.5 5h8" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="3" cy="21" r="2.4" fill="${accent}"/><circle cx="29" cy="21" r="2.4" fill="${accent}"/>
-</svg>`;
 }

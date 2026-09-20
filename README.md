@@ -134,7 +134,7 @@ blog.example.com {
 
 ## Hosting the public site on GitHub Pages
 
-The public blog doesn't need a server. `npm run build` renders every page, tag, image
+The public blog doesn't need a server. `bun run build` renders every page, tag, image
 and the RSS feed into `dist/` as plain files, using the same templates as the server.
 
 The posts repo carries a workflow (`.github/workflows/pages.yml`) that does this on
@@ -156,7 +156,7 @@ To build locally:
 
 ```bash
 LOCAL_CONTENT=../makersec-posts BASE_PATH=/makersec-posts \
-SITE_URL=https://you.github.io/makersec-posts npm run build
+SITE_URL=https://you.github.io/makersec-posts bun run build
 ```
 
 On Windows Git Bash, prefix that with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
@@ -181,7 +181,7 @@ On Windows Git Bash, prefix that with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
 | `REFRESH_TOKEN` | — | if set, `/api/refresh` requires `?token=` or `X-Refresh-Token` |
 | `LOCAL_CONTENT` | — | read a local folder instead of GitHub (dev/offline) |
 | `BASE_PATH` | *(none)* | serve from a sub-path, e.g. `/makersec-posts` on GitHub Pages |
-| `OUT_DIR` | `dist` | where `npm run build` writes the static site |
+| `OUT_DIR` | `dist` | where `bun run build` writes the static site |
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | listen address inside the container |
 
 ## Routes
@@ -195,17 +195,41 @@ On Windows Git Bash, prefix that with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
 | `/about`, `/uses`, … | standalone pages, if those files exist |
 | `/media/*` | images and attachments from the repo |
 | `/feed.xml`, `/sitemap.xml`, `/robots.txt` | syndication |
-| `/api/posts.json` | the index as JSON |
 | `/api/refresh` | force a re-fetch |
 | `/webhook` | GitHub push webhook (HMAC verified) |
 | `/healthz` | version, post count, rate limit, content errors |
 
 ## Local development
 
+Runs on [Bun](https://bun.sh) 1.1+ — the server, the static build, the stylesheet and
+the checks all go through it. There is no Node dependency.
+
 ```bash
-npm install
-LOCAL_CONTENT=../makersec-posts npm run dev
+bun install
+LOCAL_CONTENT=../makersec-posts bun run dev   # reloads on change
 ```
+
+## Styling
+
+Styles are Tailwind CSS v4. `src/styles.css` is the source; `public/style.css` is the
+compiled output, committed to the repo and served as `/static/style.css`. Compile after
+editing:
+
+```bash
+bun run css          # once
+bun run css:watch    # while editing
+```
+
+Committing the compiled file keeps the Docker image and the Pages workflow free of a
+build step. Three layers live in the source:
+
+- **`@theme`** aliases the design tokens onto Tailwind's namespaces, so `bg-panel`,
+  `text-ink` and `border-line` resolve to whichever theme is active.
+- **Theme blocks** are plain custom properties, one set per theme, scheme and mode.
+  See [THEMES.md](THEMES.md).
+- **`@layer base` and `@layer components`** hold the site's own classes, written with
+  `@apply`. Rules that are driven by a token Tailwind has no utility for — border
+  widths, shadows, backdrop filters — stay plain CSS in the same rule.
 
 `LOCAL_CONTENT` swaps the GitHub backend for a folder on disk, so you can write and
 style against a local clone of the posts repo without touching the API.

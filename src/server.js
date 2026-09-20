@@ -1,275 +1,281 @@
+// The site, served by Bun. Routes render through pages.js/documents.js, the same
+// modules the static build uses, so the two can't drift.
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import Fastify from 'fastify';
-import fastifyStatic from '@fastify/static';
 import { config, assertConfig } from './config.js';
 import { getIndex, getHtml, getMedia, invalidate, slugify, source } from './content.js';
 import * as pages from './pages.js';
-import * as views from './views.js';
+import * as documents from './documents.js';
+import { ASSET_V } from './views.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 const startedAt = Date.now();
-// Bumped every restart so a deploy (new templates, new SITE_TITLE) invalidates
-// cached HTML even when the content itself has not changed.
-const BOOT = startedAt.toString(36);
+// The asset stamp doubles as the deploy id: a restart (new templates, new SITE_TITLE)
+// invalidates cached HTML even when the content itself has not changed.
+const BOOT = ASSET_V;
+const PUBLIC_DIR = new URL('../public/', import.meta.url);
 
 const MIME = {
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-  '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
-  '.wav': 'audio/wav', '.pdf': 'application/pdf', '.json': 'application/json',
-  '.csv': 'text/csv', '.txt': 'text/plain', '.stl': 'model/stl', '.zip': 'application/zip',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.pdf': 'application/pdf',
+  '.json': 'application/json',
+  '.csv': 'text/csv',
+  '.txt': 'text/plain',
+  '.stl': 'model/stl',
+  '.zip': 'application/zip',
 };
 
-const app = Fastify({
-  logger: { level: process.env.LOG_LEVEL || 'info' },
-  trustProxy: true,
-});
+const html = (body, etag) =>
+  new Response(body, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-cache',
+      ...(etag ? { etag: `"${etag}"` } : {}),
+    },
+  });
 
-await app.register(fastifyStatic, {
-  root: path.join(here, '..', 'public'),
-  prefix: '/static/',
-  maxAge: '7d',
-});
+const send = (body, type, cache = 'no-cache') =>
+  new Response(body, { headers: { 'content-type': type, 'cache-control': cache } });
 
-// Feed and sitemap links need an absolute origin; without SITE_URL, use the request's.
-const siteBase = (req) => config.site.url || `${req.protocol}://${req.headers.host}`;
+const fresh = (req, etag) => {
+  const given = req.headers.get('if-none-match');
+  return Boolean(etag && given && given.replace(/^W\//, '') === `"${etag}"`);
+};
+const notModified = () => new Response(null, { status: 304 });
 
-function sendHtml(reply, html, { etag } = {}) {
-  if (etag) reply.header('etag', `"${etag}"`);
-  reply.header('cache-control', 'no-cache');
-  reply.type('text/html; charset=utf-8');
-  return reply.send(html);
+// Feed and sitemap links need an absolute origin. Behind a reverse proxy the forwarded
+// headers carry the public one; SITE_URL wins over both when it is set.
+function siteBase(req) {
+  if (config.site.url) return config.site.url;
+  const url = new URL(req.url);
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || url.host;
+  const proto = req.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
+  return `${proto}://${host}`;
 }
 
-function notModified(req, etag) {
-  const inm = req.headers['if-none-match'];
-  return Boolean(etag && inm && inm.replace(/^W\//, '') === `"${etag}"`);
-}
-
-app.get('/', async (req, reply) => {
-  const idx = await getIndex();
-  const etag = `i-${BOOT}-${idx.version}-${idx.posts.length}`;
-  if (notModified(req, etag)) return reply.code(304).send();
-  return sendHtml(reply, pages.indexHtml(idx), { etag });
-});
-
-app.get('/tags', async (req, reply) => {
-  const idx = await getIndex();
-  return sendHtml(reply, pages.tagsHtml(idx));
-});
-
-app.get('/tags/:tag', async (req, reply) => {
-  const idx = await getIndex();
-  const tag = idx.tags.get(slugify(req.params.tag));
-  if (!tag) return send404(reply, idx);
-  return sendHtml(reply, pages.tagHtml(tag, idx));
-});
-
-app.get('/p/:slug', async (req, reply) => {
-  const idx = await getIndex();
-  const raw = req.params.slug.endsWith('.md');
-  const slug = raw ? req.params.slug.slice(0, -3) : req.params.slug;
-  const post = idx.bySlug.get(slug);
-  if (!post) return send404(reply, idx);
-
-  if (raw) {
-    reply.type('text/markdown; charset=utf-8');
-    reply.header('cache-control', 'no-cache');
-    return reply.send(post.body);
-  }
-
-  const etag = `p-${BOOT}-${post.sha}`;
-  if (notModified(req, etag)) return reply.code(304).send();
-
-  return sendHtml(reply, pages.postHtml(post, await getHtml(post, idx), idx), { etag });
-});
-
-// Standalone pages: /about, /uses, /now, /colophon, /contact
-app.get('/:page', async (req, reply) => {
-  const idx = await getIndex();
-  const page = idx.pages.get(slugify(req.params.page));
-  if (!page) return send404(reply, idx);
-  return sendHtml(reply, pages.standaloneHtml(page, await getHtml(page, idx), idx));
-});
-
-app.get('/media/*', async (req, reply) => {
-  const wanted = decodeURIComponent(req.params['*'] || '');
-  const found = await getMedia(wanted);
-  if (!found) return reply.code(404).type('text/plain').send('not found');
-
-  const etag = `"m-${found.entry.sha}"`;
-  if (req.headers['if-none-match'] === etag) return reply.code(304).send();
-
-  const ext = path.extname(wanted).toLowerCase();
-  reply.header('etag', etag);
-  reply.header('cache-control', 'public, max-age=3600');
-  reply.type(MIME[ext] || 'application/octet-stream');
-  return reply.send(found.buffer);
-});
-
-app.get('/api/posts.json', async (req, reply) => {
-  const idx = await getIndex();
-  reply.header('cache-control', 'no-cache');
-  return {
-    version: idx.version,
-    count: idx.posts.length,
-    posts: idx.posts.map((p) => ({
-      n: p.n, slug: p.slug, title: p.title, date: p.dateISO, tags: p.tags,
-      status: p.status, draft: p.draft, summary: p.summary, minutes: p.minutes,
-    })),
-  };
-});
-
-app.get('/feed.xml', async (req, reply) => {
-  const idx = await getIndex();
-  const items = [];
-  for (const post of idx.posts.slice(0, 20)) items.push({ post, html: await getHtml(post, idx) });
-  reply.type('application/rss+xml; charset=utf-8');
-  reply.header('cache-control', 'no-cache');
-  return reply.send(views.feedXml(idx, siteBase(req), items));
-});
-
-app.get('/sitemap.xml', async (req, reply) => {
-  if (config.isPrivate) return reply.code(404).type('text/plain').send('not found');
-  const idx = await getIndex();
-  reply.type('application/xml; charset=utf-8');
-  return reply.send(views.sitemapXml(idx, siteBase(req)));
-});
-
-app.get('/robots.txt', async (req, reply) => {
-  reply.type('text/plain');
-  return reply.send(views.robotsTxt(siteBase(req)));
-});
-
-// Favicon is generated so the private tab is visibly a different colour.
-app.get('/favicon.svg', async (req, reply) => {
-  reply.type('image/svg+xml');
-  reply.header('cache-control', 'public, max-age=86400');
-  return reply.send(views.faviconSvg());
-});
-
-app.get('/healthz', async (req, reply) => {
+async function notFound() {
   let idx = null;
-  let error = null;
   try {
     idx = await getIndex();
-  } catch (err) {
-    error = err.message;
+  } catch {
+    /* the index may be down; the page still renders */
   }
-  reply.code(error ? 503 : 200);
-  return {
-    ok: !error,
-    mode: config.mode,
-    source: source.label(),
-    version: idx?.version || null,
-    posts: idx?.posts.length ?? 0,
-    drafts: idx?.drafts ?? 0,
-    media: idx?.media.size ?? 0,
-    contentErrors: idx?.errors ?? [],
-    stale: idx?.stale || null,
-    cachedForSeconds: idx ? Math.round((Date.now() - idx.checkedAt) / 1000) : null,
-    githubApiCalls: source.stats?.apiCalls ?? null,
-    rateLimitRemaining: source.stats?.rateRemaining ?? null,
-    uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
-    error,
-  };
-});
+  return new Response(pages.errorHtml(404, pages.NOT_FOUND, idx), {
+    status: 404,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' },
+  });
+}
 
-// Manual cache bust. Open on a LAN/tailnet-only instance; set REFRESH_TOKEN to lock it down.
-async function refresh(req, reply) {
+async function refresh(req) {
   const token = process.env.REFRESH_TOKEN || '';
   if (token) {
-    const given = req.headers['x-refresh-token'] || req.query?.token || '';
-    if (given !== token) return reply.code(403).send({ ok: false, error: 'bad token' });
+    const given =
+      req.headers.get('x-refresh-token') || new URL(req.url).searchParams.get('token') || '';
+    if (given !== token) return Response.json({ ok: false, error: 'bad token' }, { status: 403 });
   }
   invalidate();
   const idx = await getIndex({ force: true });
-  req.log.info({ version: idx.version, posts: idx.posts.length }, 'content refreshed');
-  if ((req.headers.accept || '').includes('text/html')) return reply.redirect('/');
-  return { ok: true, version: idx.version, posts: idx.posts.length };
-}
-app.get('/api/refresh', refresh);
-app.post('/api/refresh', refresh);
-
-// GitHub push webhook -> drop the cache immediately.
-app.post('/webhook', { config: { rawBody: true } }, async (req, reply) => {
-  const secret = config.webhookSecret;
-  if (!secret) return reply.code(503).send({ ok: false, error: 'WEBHOOK_SECRET not set' });
-
-  const sig = req.headers['x-hub-signature-256'];
-  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
-  const a = Buffer.from(String(sig || ''));
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return reply.code(401).send({ ok: false, error: 'bad signature' });
-  }
-
-  const event = req.headers['x-github-event'];
-  if (event === 'ping') return { ok: true, pong: true };
-  if (event !== 'push') return { ok: true, ignored: event };
-
-  invalidate();
-  const idx = await getIndex({ force: true });
-  req.log.info({ version: idx.version, posts: idx.posts.length }, 'webhook refresh');
-  return { ok: true, version: idx.version, posts: idx.posts.length };
-});
-
-// Keep the raw body around so the webhook HMAC can be verified.
-app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-  req.rawBody = body;
-  try {
-    done(null, body ? JSON.parse(body) : {});
-  } catch (err) {
-    err.statusCode = 400;
-    done(err, undefined);
-  }
-});
-
-// Anything else (including a bodyless `curl -X POST /api/refresh`, and webhooks
-// configured as form-urlencoded) is kept raw rather than rejected with a 415.
-app.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
-  req.rawBody = body;
-  done(null, body || undefined);
-});
-
-function send404(reply, idx) {
-  reply.code(404);
-  return sendHtml(reply, pages.errorHtml(404, pages.NOT_FOUND, idx));
+  console.log(`content refreshed: ${idx.posts.length} posts @ ${idx.version.slice(0, 7)}`);
+  if ((req.headers.get('accept') || '').includes('text/html'))
+    return Response.redirect(config.basePath + '/', 302);
+  return Response.json({ ok: true, version: idx.version, posts: idx.posts.length });
 }
 
-app.setNotFoundHandler(async (req, reply) => {
-  let idx = null;
-  try { idx = await getIndex(); } catch { /* index may be down; still render the page */ }
-  return send404(reply, idx);
-});
+const server = Bun.serve({
+  port: config.port,
+  hostname: config.host,
 
-app.setErrorHandler(async (err, req, reply) => {
-  req.log.error({ err }, 'request failed');
-  const code = err.statusCode || 500;
-  reply.code(code);
-  return sendHtml(reply, pages.errorHtml(code, code === 404
-    ? pages.NOT_FOUND
-    : 'The server could not fetch or render that. Check /healthz for details.'));
+  routes: {
+    '/': async (req) => {
+      const idx = await getIndex();
+      const etag = `i-${BOOT}-${idx.version}-${idx.posts.length}`;
+      return fresh(req, etag) ? notModified() : html(pages.indexHtml(idx), etag);
+    },
+
+    '/tags': async () => html(pages.tagsHtml(await getIndex())),
+
+    '/tags/:tag': async (req) => {
+      const idx = await getIndex();
+      const tag = idx.tags.get(slugify(req.params.tag));
+      return tag ? html(pages.tagHtml(tag, idx)) : notFound();
+    },
+
+    '/p/:slug': async (req) => {
+      const idx = await getIndex();
+      const raw = req.params.slug.endsWith('.md');
+      const slug = raw ? req.params.slug.slice(0, -3) : req.params.slug;
+      const post = idx.bySlug.get(slug);
+      if (!post) return notFound();
+      if (raw) return send(post.body, 'text/markdown; charset=utf-8');
+
+      const etag = `p-${BOOT}-${post.sha}`;
+      if (fresh(req, etag)) return notModified();
+      return html(pages.postHtml(post, await getHtml(post, idx), idx), etag);
+    },
+
+    '/media/*': async (req) => {
+      const wanted = decodeURIComponent(new URL(req.url).pathname.split('/media/')[1] || '');
+      const found = await getMedia(wanted);
+      if (!found) return new Response('not found', { status: 404 });
+
+      const etag = `"m-${found.entry.sha}"`;
+      if (req.headers.get('if-none-match') === etag) return notModified();
+      return new Response(found.buffer, {
+        headers: {
+          'content-type': MIME[path.extname(wanted).toLowerCase()] || 'application/octet-stream',
+          'cache-control': 'public, max-age=3600',
+          etag,
+        },
+      });
+    },
+
+    // Compiled CSS, app.js and anything else dropped in public/.
+    '/static/*': async (req) => {
+      const name = new URL(req.url).pathname.split('/static/')[1] || '';
+      if (name.includes('..')) return new Response('not found', { status: 404 });
+      const file = Bun.file(new URL(name, PUBLIC_DIR));
+      if (!(await file.exists())) return new Response('not found', { status: 404 });
+      return new Response(file, { headers: { 'cache-control': 'public, max-age=604800' } });
+    },
+
+    '/feed.xml': async (req) => {
+      const idx = await getIndex();
+      const items = [];
+      for (const post of idx.posts.slice(0, 20))
+        items.push({ post, html: await getHtml(post, idx) });
+      return send(
+        documents.feedXml(idx, siteBase(req), items),
+        'application/rss+xml; charset=utf-8'
+      );
+    },
+
+    '/sitemap.xml': async (req) => {
+      if (config.isPrivate) return new Response('not found', { status: 404 });
+      return send(
+        documents.sitemapXml(await getIndex(), siteBase(req)),
+        'application/xml; charset=utf-8'
+      );
+    },
+
+    '/robots.txt': (req) => send(documents.robotsTxt(siteBase(req)), 'text/plain'),
+
+    // Generated so the private tab is visibly a different colour.
+    '/favicon.svg': () => send(documents.faviconSvg(), 'image/svg+xml', 'public, max-age=86400'),
+
+    '/healthz': async () => {
+      let idx = null;
+      let error = null;
+      try {
+        idx = await getIndex();
+      } catch (err) {
+        error = err.message;
+      }
+      return Response.json(
+        {
+          ok: !error,
+          mode: config.mode,
+          source: source.label(),
+          version: idx?.version || null,
+          posts: idx?.posts.length ?? 0,
+          drafts: idx?.drafts ?? 0,
+          media: idx?.media.size ?? 0,
+          contentErrors: idx?.errors ?? [],
+          stale: idx?.stale || null,
+          cachedForSeconds: idx ? Math.round((Date.now() - idx.checkedAt) / 1000) : null,
+          githubApiCalls: source.stats?.apiCalls ?? null,
+          rateLimitRemaining: source.stats?.rateRemaining ?? null,
+          uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+          error,
+        },
+        { status: error ? 503 : 200 }
+      );
+    },
+
+    // Manual cache bust. Open on a LAN/tailnet-only instance; set REFRESH_TOKEN to lock it down.
+    '/api/refresh': { GET: refresh, POST: refresh },
+
+    // GitHub push webhook -> drop the cache immediately.
+    '/webhook': {
+      POST: async (req) => {
+        const secret = config.webhookSecret;
+        if (!secret)
+          return Response.json({ ok: false, error: 'WEBHOOK_SECRET not set' }, { status: 503 });
+
+        // The raw body is what the signature covers, so read it before parsing anything.
+        const body = await req.text();
+        const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex');
+        const given = Buffer.from(String(req.headers.get('x-hub-signature-256') || ''));
+        const mine = Buffer.from(expected);
+        if (given.length !== mine.length || !crypto.timingSafeEqual(given, mine)) {
+          return Response.json({ ok: false, error: 'bad signature' }, { status: 401 });
+        }
+
+        const event = req.headers.get('x-github-event');
+        if (event === 'ping') return Response.json({ ok: true, pong: true });
+        if (event !== 'push') return Response.json({ ok: true, ignored: event });
+
+        invalidate();
+        const idx = await getIndex({ force: true });
+        console.log(`webhook refresh: ${idx.posts.length} posts @ ${idx.version.slice(0, 7)}`);
+        return Response.json({ ok: true, version: idx.version, posts: idx.posts.length });
+      },
+    },
+
+    // Standalone pages: /about, /uses, /now, /colophon, /contact
+    '/:page': async (req) => {
+      const idx = await getIndex();
+      const page = idx.pages.get(slugify(req.params.page));
+      if (!page) return notFound();
+      return html(pages.standaloneHtml(page, await getHtml(page, idx), idx));
+    },
+  },
+
+  fetch: notFound,
+
+  error(err) {
+    console.error('request failed:', err);
+    return new Response(
+      pages.errorHtml(
+        500,
+        'The server could not fetch or render that. Check /healthz for details.'
+      ),
+      { status: 500, headers: { 'content-type': 'text/html; charset=utf-8' } }
+    );
+  },
 });
 
 try {
   assertConfig();
-  await app.listen({ port: config.port, host: config.host });
-  app.log.info(`makersec [${config.mode}] serving ${source.label()}`);
-  // Warm the cache so the first visitor doesn't pay for the GitHub round trip.
-  getIndex({ force: true })
-    .then((idx) => app.log.info(`indexed ${idx.posts.length} posts, ${idx.media.size} media files @ ${idx.version.slice(0, 7)}`))
-    .catch((err) => app.log.error(`initial index failed: ${err.message}`));
 } catch (err) {
-  app.log.error(err.message);
+  console.error(err.message);
   process.exit(1);
 }
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
-    await app.close();
+console.log(
+  `makersec [${config.mode}] serving ${source.label()} on http://${server.hostname}:${server.port}`
+);
+// Warm the cache so the first visitor doesn't pay for the GitHub round trip.
+getIndex({ force: true })
+  .then((idx) =>
+    console.log(
+      `indexed ${idx.posts.length} posts, ${idx.media.size} media files @ ${idx.version.slice(0, 7)}`
+    )
+  )
+  .catch((err) => console.error(`initial index failed: ${err.message}`));
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, async () => {
+    await server.stop();
     process.exit(0);
   });
 }

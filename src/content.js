@@ -105,20 +105,6 @@ function parseEntry(entry, raw) {
   };
 }
 
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const i = cursor;
-      cursor += 1;
-      out[i] = await fn(items[i], i);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
-
 async function build(force) {
   const version = await source.version({ force });
   if (index && index.version === version && !force) {
@@ -143,13 +129,15 @@ async function build(force) {
     }
   }
 
-  const parsed = await mapLimit(markdown, 8, async (entry) => {
+  // ponytail: every post is fetched at once. Fine for a blog-sized repo; if one ever
+  // grows to hundreds of posts, GitHub's abuse detection will want a concurrency cap.
+  const parsed = await Promise.all(markdown.map(async (entry) => {
     try {
       return parseEntry(entry, await source.readText(entry));
     } catch (err) {
       return { error: err.message, path: entry.path };
     }
-  });
+  }));
 
   const errors = parsed.filter((p) => p.error);
   const all = parsed.filter((p) => !p.error);

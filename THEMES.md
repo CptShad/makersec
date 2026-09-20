@@ -18,7 +18,7 @@ Four ship today:
 These hold in every theme. A theme that breaks one is a bug, not a style.
 
 1. **One layout.** HTML and page structure are shared. A theme is only custom
-   properties in `public/style.css` — no theme-specific selectors on components.
+   properties in `src/styles.css` — no theme-specific selectors on components.
 2. **Public and private are never confused.** Every theme sets its own private
    accent, and the private instance always keeps the hazard stripe.
 3. **Status stays legible.** Working, in progress, magic smoke, shelved, idea and
@@ -30,6 +30,9 @@ These hold in every theme. A theme that breaks one is a bug, not a style.
 6. **Diagrams follow the theme; their meaning doesn't.** Canvas and node colours
    come from the theme. The palette classes authors write (`:::blue`, `:::green`…)
    keep their colours so a diagram reads the same everywhere.
+7. **Contrast is not a matter of taste.** Every text token clears WCAG AA (4.5:1)
+   against the surface it sits on, in all four combinations. A pretty colour that
+   can't be read is a bug.
 
 ## What a theme can set
 
@@ -93,7 +96,7 @@ Set `--diagram-dot` and `--diagram-shadow` to `transparent` for a flat canvas.
    `['workbench', 'Workbench', ['#1b1b1b', '#f2a900', '#4aa3ff']]` — id, the name
    in the picker, and three colours for its swatch there. The order is the order in
    the picker.
-2. **Add four blocks** to the token section of `public/style.css`, after the
+2. **Add four blocks** to the token section of `src/styles.css`, after the
    existing themes and in exactly this order (later blocks win, so the order is
    what keeps private and light correct):
 
@@ -106,7 +109,11 @@ Set `--diagram-dot` and `--diagram-shadow` to `transparent` for a flat canvas.
 
    The light block must repeat every colour the dark block changed, or dark
    values leak into light.
-3. **Check it** in all four combinations — public and private, dark and light —
-   on a post with a diagram, and against the philosophy above.
+3. **Check it** in all four combinations — public and private, dark and light — on a
+   post with a diagram, and against the philosophy above.
+4. **Compile it**: `bun run css`. That rewrites `public/style.css`, which is committed
+   and is what the site serves. `bun run css:watch` recompiles while you work.
 
-No build step: restart the server or rerun `npm run build`.
+The tokens above are plain custom properties, so a theme never touches a component
+rule. Tailwind reads the palette through aliases in `@theme` (`--color-bg: var(--bg)`),
+which is why `bg-bg` and `text-ink` follow whichever theme is active.

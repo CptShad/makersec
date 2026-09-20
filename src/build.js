@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { config, assertConfig } from './config.js';
 import { getIndex, getHtml, source } from './content.js';
 import * as pages from './pages.js';
-import * as views from './views.js';
+import * as documents from './documents.js';
 
 config.isStatic = true;
 
@@ -67,10 +67,10 @@ await write('404.html', pages.errorHtml(404, pages.NOT_FOUND, idx));
 
 const feedItems = [];
 for (const post of idx.posts.slice(0, 20)) feedItems.push({ post, html: await getHtml(post, idx) });
-await write('feed.xml', views.feedXml(idx, base, feedItems));
-if (!config.isPrivate) await write('sitemap.xml', views.sitemapXml(idx, base));
-await write('robots.txt', views.robotsTxt(base));
-await write('favicon.svg', views.faviconSvg());
+await write('feed.xml', documents.feedXml(idx, base, feedItems));
+if (!config.isPrivate) await write('sitemap.xml', documents.sitemapXml(idx, base));
+await write('robots.txt', documents.robotsTxt(base));
+await write('favicon.svg', documents.faviconSvg());
 
 await copyDir(path.join(here, '..', 'public'), 'static');
 for (const entry of idx.media.values()) await write(`media/${entry.path}`, await source.readBinary(entry));
