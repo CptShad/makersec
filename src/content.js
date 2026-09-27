@@ -6,7 +6,7 @@ import { render } from './markdown.js';
 
 export const source = config.localContent ? local : github;
 
-const MEDIA_EXT = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|mp3|ogg|wav|pdf|stl|zip|txt|csv|json|ino|py|sch|kicad_pcb|kicad_sch|step|3mf|gcode)$/i;
+const MEDIA_EXT = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|mp3|ogg|wav|pdf|stl|zip|txt|csv|json|ino|py|sch|kicad_pcb|kicad_sch|step|3mf|gcode|glb)$/i;
 const DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})[-_. ]+/;
 // Root-level files with these names are standalone pages, outside the post stream.
 const PAGE_NAMES = new Set(['about', 'now', 'uses', 'colophon', 'contact']);

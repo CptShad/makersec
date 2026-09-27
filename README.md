@@ -75,6 +75,12 @@ Conventions worth knowing:
   `pink`, `purple` or `gray`, e.g. `wyse("Dell Wyse<small>Bastion</small>"):::blue`.
   `<small>` inside a label adds a quieter second line. Mermaid loads from a CDN only on
   pages that contain a diagram; without internet the source is shown as text.
+- An image link to a `.glb` renders an interactive 3D viewer instead of an image:
+  `![EliteDesk mini rack](models/mini-rack.glb)`. It orbits, explodes, spins, and lists
+  the model's parts with show/hide. Part names and labels come from the GLB's
+  `scenes[0].extras.viewer` (see `public/glb-viewer.js`); without them every top-level node
+  is a part. three.js loads from a CDN only on pages that have a model, and only once
+  the viewer scrolls near the screen. Feed readers get a download link instead.
 - Task lists, footnotes, tables and `- [ ]` checkboxes all work.
 - Visitors can switch between themes (Perfboard, Glass, Brutalist, Synthwave) from the
   header, independently of dark/light. A theme only changes colours, type and

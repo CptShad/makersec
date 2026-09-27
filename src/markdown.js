@@ -40,6 +40,13 @@ function rewriteAssets(md) {
     if (!ABSOLUTE.test(src)) {
       token.attrSet('src', `${config.basePath}/media/${resolveRepoPath(env.dir || '', src).split('/').map(encodeURIComponent).join('/')}`);
     }
+    if (/\.glb([?#].*)?$/i.test(src)) {
+      // ![alt](model.glb) -> interactive 3D viewer (public/glb-viewer.js); the link is the
+      // fallback for feed readers and browsers without JS or WebGL.
+      const url = md.utils.escapeHtml(token.attrGet('src'));
+      const alt = md.utils.escapeHtml(self.renderInlineAsText(token.children, opts, env));
+      return `<glb-viewer src="${url}" label="${alt || '3D model'}"><a href="${url}" download>${alt || '3D model'} (.glb)</a></glb-viewer>`;
+    }
     token.attrSet('loading', 'lazy');
     token.attrSet('decoding', 'async');
     return image(tokens, idx, opts, env, self);

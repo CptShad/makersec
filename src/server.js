@@ -33,6 +33,7 @@ const MIME = {
   '.txt': 'text/plain',
   '.stl': 'model/stl',
   '.zip': 'application/zip',
+  '.glb': 'model/gltf-binary',
 };
 
 const html = (body, etag) =>

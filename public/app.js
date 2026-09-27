@@ -3,6 +3,14 @@
   'use strict';
 
   var root = document.documentElement;
+  var scriptSrc = document.currentScript && document.currentScript.src;
+
+  /* ---------- 3D models: ![alt](model.glb) renders as <glb-viewer> ---------- */
+  // Loaded only on pages that have one; keeps app.js's ?v= stamp so a deploy refreshes it too.
+  if (scriptSrc && document.querySelector('glb-viewer')) {
+    import(new URL('glb-viewer.js' + new URL(scriptSrc).search, scriptSrc).href)
+      .catch(function (err) { console.warn('3D viewer failed to load', err); });
+  }
 
   /* ---------- look: dark/light scheme and visual theme ---------- */
   // The inline script in <head> applies stored choices before first paint; this only
