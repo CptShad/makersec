@@ -262,8 +262,12 @@ try {
   process.exit(1);
 }
 
+// 0.0.0.0 and :: mean "every interface", which is not an address a browser can open.
+const shownHost =
+  server.hostname === '0.0.0.0' || server.hostname === '::' ? 'localhost' : server.hostname;
+
 console.log(
-  `makersec [${config.mode}] serving ${source.label()} on http://${server.hostname}:${server.port}`
+  `makersec [${config.mode}] serving ${source.label()} on http://${shownHost}:${server.port}`
 );
 // Warm the cache so the first visitor doesn't pay for the GitHub round trip.
 getIndex({ force: true })

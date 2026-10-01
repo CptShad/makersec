@@ -1184,11 +1184,17 @@ html[data-theme='synthwave'][data-mode='private'][data-scheme='light'] {
   }
 
   .diagram .flowchart-link {
-    @apply [stroke-linecap:round];
-    stroke-width: 1.75px !important;
+    @apply [stroke-linecap:round] [stroke-linejoin:round];
+    stroke-width: 1.6px !important;
   }
-  .diagram marker path {
+  .diagram .flowchart-link,
+  .diagram .edgePath path {
+    paint-order: stroke;
+  }
+  .diagram marker path,
+  .diagram marker polygon {
     @apply [stroke:none];
+    fill: var(--diagram-line) !important;
   }
   .diagram .edgeLabel,
   .diagram .edgeLabel p {

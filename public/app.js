@@ -289,7 +289,7 @@
         nodeBorder: token('--diagram-node-border'),
         mainBkg: token('--diagram-node'),
       },
-      flowchart: { curve: 'basis', padding: 18, nodeSpacing: 46, rankSpacing: 58, htmlLabels: true, diagramPadding: 12, subGraphTitleMargin: { top: 8, bottom: 16 } },
+      flowchart: { curve: 'step', padding: 22, nodeSpacing: 54, rankSpacing: 68, htmlLabels: true, diagramPadding: 16, subGraphTitleMargin: { top: 10, bottom: 18 } },
       sequence: { actorMargin: 60, boxMargin: 12, mirrorActors: false },
     };
   }
